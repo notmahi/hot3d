@@ -7,17 +7,16 @@ indices 0,1,2,3,4) get close to the object pointcloud, parametrized by a thresho
 """
 
 import os
+from pathlib import Path
 import sys
 import json
 from typing import List, Optional, Set, Dict, Any
 from dataclasses import dataclass, asdict
 import numpy as np
+import pathlib
+import tqdm
 
-try:
-    import trimesh
-except ImportError:
-    print("trimesh module is missing. Please install it: pip install trimesh")
-    sys.exit(1)
+import trimesh
 
 from data_loaders.loader_hand_poses import Handedness
 from data_loaders.loader_object_library import ObjectLibrary, load_object_library
@@ -154,8 +153,8 @@ def check_fingertip_touching(
 
 def extract_fingertip_touching_timestamps(
     sequence_folder: str,
-    object_library_folder: str,
-    mano_hand_model_path: Optional[str] = None,
+    object_library: ObjectLibrary,
+    mano_hand_model: MANOHandModel,
     epsilon: float = 0.01,
     num_samples: int = 10000,
 ) -> List[TouchEvent]:
@@ -172,17 +171,6 @@ def extract_fingertip_touching_timestamps(
     Returns:
         List of TouchEvent objects containing detailed information about each touching event
     """
-    # Load object library
-    object_library = load_object_library(object_library_folder)
-    
-    # Load MANO hand model if provided
-    mano_hand_model = None
-    if mano_hand_model_path is not None:
-        if os.path.exists(mano_hand_model_path):
-            mano_hand_model = MANOHandModel(mano_hand_model_path)
-        else:
-            print(f"Warning: MANO hand model path not found: {mano_hand_model_path}")
-            print("Continuing without MANO hand model (will use UmeTrack if available)")
     
     # Initialize HOT3D data provider
     hot3d_data_provider = Hot3dDataProvider(
@@ -345,40 +333,44 @@ def main():
         help="Output file path to save touch events as JSON (optional, prints to stdout if not provided)",
     )
     
-    args = parser.parse_args()
     
-    # Extract touching events
-    touch_events = extract_fingertip_touching_timestamps(
-        sequence_folder=args.sequence_folder,
-        object_library_folder=args.object_library_folder,
-        mano_hand_model_path=args.mano_hand_model_path,
-        epsilon=args.epsilon,
-        num_samples=args.num_samples,
-    )
-    
-    # Output results
-    print(f"\nFound {len(touch_events)} fingertip touching events:")
-    if len(touch_events) > 0:
-        print(f"First event: timestamp={touch_events[0].timestamp_ns}, "
-              f"hand={touch_events[0].handedness}, object={touch_events[0].object_uid}")
-        if len(touch_events) > 1:
-            print(f"... and {len(touch_events) - 1} more events")
-    
-    if args.output:
-        # Convert TouchEvent objects to dictionaries for JSON serialization
-        events_dict = [asdict(event) for event in touch_events]
-        with open(args.output, "w") as f:
-            json.dump(events_dict, f, indent=2)
-        print(f"\nTouch events saved to: {args.output}")
-    else:
-        print("\nTouch events (first 3):")
-        for event in touch_events[:3]:
-            print(f"  Timestamp: {event.timestamp_ns}, "
-                  f"Hand: {event.handedness}, "
-                  f"Object: {event.object_uid}")
-        if len(touch_events) > 3:
-            print(f"  ... and {len(touch_events) - 3} more events")
+    # Load MANO hand model if provided
 
+    args = parser.parse_args()
+    mano_hand_model = MANOHandModel(args.mano_hand_model_path)
+    # Load object library
+    object_library = load_object_library(args.object_library_folder)
+    
+    all_folders = pathlib.Path(args.sequence_folder).glob("*")
+    for folder in tqdm.tqdm(list[Path](all_folders)):
+        if folder.is_dir():
+            sequence_folder = folder.as_posix()
+
+            try:
+                # Extract touching events
+                touch_events = extract_fingertip_touching_timestamps(
+                    sequence_folder=sequence_folder,
+                    object_library=object_library,
+                    mano_hand_model=mano_hand_model,
+                    epsilon=args.epsilon,
+                    num_samples=args.num_samples,
+                )
+                output_filepath = os.path.join(sequence_folder, "touch_events.json")
+                events_dict = [asdict(event) for event in touch_events]
+                with open(output_filepath, "w") as f:
+                    json.dump(events_dict, f, indent=2)
+                print(f"\nTouch events saved to: {output_filepath}")
+
+                # # Output results
+                print(f"\nFound {len(touch_events)} fingertip touching events")
+            except Exception as e:
+                print(f"Error extracting touching events for {sequence_folder}: {e}")
+                continue
+            # if len(touch_events) > 0:
+            #     print(f"First event: timestamp={touch_events[0].timestamp_ns}, "
+            #         f"hand={touch_events[0].handedness}, object={touch_events[0].object_uid}")
+            #     if len(touch_events) > 1:
+            #         print(f"... and {len(touch_events) - 1} more events")
 
 if __name__ == "__main__":
     main()

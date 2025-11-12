@@ -13,20 +13,10 @@ import random
 from typing import List, Optional, Dict, Any
 import numpy as np
 
-try:
-    import rerun as rr
-    from projectaria_tools.utils.rerun_helpers import ToTransform3D
-except ImportError:
-    print("rerun or projectaria_tools is missing. Please install them:")
-    print("  pip install rerun-sdk")
-    print("  pip install projectaria-tools")
-    sys.exit(1)
+import rerun as rr
+from projectaria_tools.utils.rerun_helpers import ToTransform3D
 
-try:
-    import trimesh
-except ImportError:
-    print("trimesh module is missing. Please install it: pip install trimesh")
-    sys.exit(1)
+import trimesh
 
 from data_loaders.loader_hand_poses import Handedness
 from data_loaders.loader_object_library import ObjectLibrary, load_object_library
