@@ -36,6 +36,7 @@ class TouchEvent:
     hand_landmarks: List[List[float]]  # All 21 landmarks, each as [x, y, z]
     object_uid: str
     object_pose_matrix: List[List[float]]  # 4x4 transformation matrix
+    camera_pose_matrix: Optional[List[List[float]]]  # 4x4 transformation matrix (None if device pose is not available)
 
 
 def se3_to_matrix_list(se3: SE3) -> List[List[float]]:
@@ -195,6 +196,9 @@ def extract_fingertip_touching_timestamps(
     if object_pose_data_provider is None:
         raise RuntimeError("No object pose data provider available")
     
+    # Get device pose provider (for camera pose)
+    device_pose_data_provider = hot3d_data_provider.device_pose_data_provider
+    
     # Load object pointclouds (in object's local coordinate frame)
     print("Loading object pointclouds...")
     object_pointclouds_local = load_object_pointclouds(hot3d_data_provider, num_samples=num_samples)
@@ -236,6 +240,18 @@ def extract_fingertip_touching_timestamps(
             continue
         
         object_poses_collection = object_poses_with_dt.pose3d_collection
+        
+        # Get device pose at this timestamp (for camera pose)
+        camera_pose_matrix = None
+        if device_pose_data_provider is not None:
+            device_pose_with_dt = device_pose_data_provider.get_pose_at_timestamp(
+                timestamp_ns=timestamp_ns,
+                time_query_options=TimeQueryOptions.CLOSEST,
+                time_domain=TimeDomain.TIME_CODE,
+                acceptable_time_delta=None,
+            )
+            if device_pose_with_dt is not None and device_pose_with_dt.pose3d.T_world_device is not None:
+                camera_pose_matrix = se3_to_matrix_list(device_pose_with_dt.pose3d.T_world_device)
         
         # Check both left and right hands
         for handedness in [Handedness.Left, Handedness.Right]:
@@ -283,6 +299,7 @@ def extract_fingertip_touching_timestamps(
                         hand_landmarks=all_landmarks.tolist(),
                         object_uid=object_uid,
                         object_pose_matrix=se3_to_matrix_list(T_world_object),
+                        camera_pose_matrix=camera_pose_matrix,
                     )
                     touch_events.append(touch_event)
     
